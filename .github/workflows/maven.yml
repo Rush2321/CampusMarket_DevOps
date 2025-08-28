@@ -1,0 +1,80 @@
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Java CI with Maven
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '8'
+        distribution: 'temurin'
+        cache: maven
+      # 2. 设置 Docker Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }} # 在GitHub仓库设置中配置此Secret
+    - name: Build with Maven
+      run: |
+        cd CampusMarket-backend
+        mvn test
+        mvn clean package
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '14.16.0' # 指定 Node.js 版本
+    - name: Cache node modules
+      uses: actions/cache@v3
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+    - name: frontend
+      run: |
+        cd CampusMarket-frontend
+        npm i
+        npm run build
+
+    # 4. 构建并推送后端镜像
+    - name: Build and Push Backend Image
+      run: |
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/backend:latest ./CampusMarket-backend
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/backend:latest
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/frontend:latest ./CampusMarket-frontend
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/frontend:latest
+    - name: check
+      run: |
+        echo ${{ secrets.HOST }}
+    - name: executing remote ssh commands to develop
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.NAME }}
+        password: ${{ secrets.KEY }}
+        port: ${{ secrets.PORT }}
+        script: bash run.sh
